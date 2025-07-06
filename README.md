@@ -295,3 +295,67 @@ Object - wait, notify
 - 모든 객체는 각자의 대기 집합을 가지고 있다.
 - 모든 객체는 모니터 락과 대기 집합을 가지고 있으며 둘은 한 쌍으로 사용된다.
   - 락을 획득한 객체의 대기 집합을 사용해야 한다.
+
+Condition
+
+`Condition condition = lock.newCondition();`
+- condition은 ReentrantLock을 사용하는 스레드가 대기하는 스레드 대기 공간
+- condition.await()
+  - Object.wait() 과 유사한 기능, 지정한 condition에 현대 스레드를 WAITING 상태로 보관
+  - ReentrantLock에서 획득한 락을 반납하고 대기 상태로 condition에 보관
+- condition.signal()
+  - Object.notify() 와 유사한 기능, 지정한 condition에서 대기중인 스레드를 하나 깨운다.
+  - 깨어난 스레드는 condition에서 빠져나온다.
+
+
+Object.notify() vs Condition.signal()
+- Object.notify()
+  - 대기 중인 스레드 중 임의의 하나를 선택해서 깨운다.
+  - 스레드가 깨어나는 순서는 정의되어 있지 않다.
+  - JVM구현에 따라 다르다. 보통은 먼저 들어온 스레드가 먼저 수행되지만 구현에 따라 다를 수 있다.
+  - synchronized 블록 내에서 모니터 락을 가지고 있는 스레드가 호출해야 한다.
+- Condition.signal()
+  - 대기 중인 스레드 중 하나를 깨우며, 일반적으로는 FIFO 순서로 깨운다.
+  - 자바 버전과 구현에 따라 달라질 수 있지만 보통 Condition의 구현은 Queue 구조를 사용하기 때문에 FIFO 순서로 깨운다.
+  - ReentrantLock을 가지고 있는 스레드가 호출해야 한다.
+
+synchronized 대기
+- 대기 1 : 락 획득 대기
+  - BLOCKED 상태로 락 획득 대기
+  - synchronized 를 시작할 때 락이 없으면 대기
+  - 다른 스레드가 synchronized 를 빠져나갈 때 대기가 풀리며 락 획득 시도
+- 대기 2 : wait() 대기
+  - WAITING 상태로 대기
+  - wait() 를 호출 했을 때 스레드 대기 집합에서 대기
+  - 다른 스레드가 notify() 를 호출 했을 때 빠져나감
+
+BLOCKED 상태의 스레드들도 어딘가의 공간에서 자바가 관리한다.
+
+자바의 모든 객체 인스턴스는 멀티스레드와 임계 영역을 다루기 위해 내부에 3가지 기본 요소를 가진다.
+- 모니터 락
+- 락 대기 집합(모니터 락 대기 집합)
+- 스레드 대기 집합
+- 락 대기 집합이 1차, 스레드 대기 집합이 2차 대기소라 생각하면 된다
+- 2차 대기소에 들어간 스레드는 2차 -> 1차 대기소를 모두 빠져나와야 임계 영역을 수행할 수 있다.
+- 정리
+  - synchronized를 사용한 임계 영역에 들어가려면 모니터 락이 필요하다
+  - 모니터 락이 없으면 락 대기 집합에 들어가서 BLOCKED 상태로 락을 기다린다.
+  - 모니터 락을 반납하면 락 대기 집합에 있는 스레드 중 하나가 락을 획득하고 BLOCKED -> RUNNABLE 상태가 된다.
+  - wait() 을 호출해서 스레드 대기 집합에 들어가기 위해서는 모니터 락이 필요하다.
+  - 스레드 대기 집합에 들어가면 모니터 락을 반납한다.
+  - 스레드가 notify()를 호출하면 스레드 대기 집합에 있는 스레드 중 하나가 스레드 대기 집합을 빠져나온다. 그 후 모니터 락 획득을 시도한다
+    - 모니터 락을 획득하면 임계 영역을 수행한다.
+    - 모니터 락을 획득하지 못하면 락 대기 집합에 들어가서 BLOCKED 상태로 락을 기다린다.
+
+ReentrantLock 대기
+- 대기 1 : ReentrantLock 락 획득 대기
+  - ReentrantLock의 대기 큐에서 관리
+  - WAITING 상태로 락 획득 대기
+  - lock.lock() 을 호출 했을 때 락이 없으면 대기
+  - 다른 스레드가 lock.unlock() 을 호출 했을 때 대기가 풀리며 락 획득 시도, 락을 획득하면 대기 큐를 빠져나감
+- 대기 2 : await() 대기
+  - condition.await() 을 호출 했을 때, condition 객체의 스레드 대기 공간에서 관리
+  - WAITING 상태로 대기
+  - 다른 스레드가 condition.signal() 을 호출 했을 때 condition 객체의 스레드 대기 공간에서 빠져나감
+
+
