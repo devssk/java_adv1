@@ -480,4 +480,84 @@ synchronized 프록시 방식의 단점
   - 예외 처리 : run() 메서드는 체크 예외를 던질 수 없다. 예외 처리는 메서드 내부에서 처리해야 한다.
 
 
+ThreadPoolExecutor
+- corePoolSize : 스레드 풀에서 관리되는 기본 스레드의 수
+- maximumPoolSize : 스레드 풀에서 관리되는 최대 스레드의 수
+- keepAliveTime, TimeUnit unit : 기본 스레드 수를 초과해서 만들어진 스레드가 생존할 수 있는 대기시간, 이 시간 동안 처리할 작업이 없다면 초과 스레든느 제거
+- BlockingQueue workQueue : 작업을 보관을 블로킹 큐
 
+
+```java
+public interface Runnable {
+    void run();
+}
+
+public interface Callable<V> {
+    V call() throws Exception;
+}
+```
+- Callable은 반환 타입이 제네릭 V이다. 따라서 Runnable과 달리 값을 반환할 수 있다.
+- Callable은 throws Exception 예외가 선언되어 있어 Callable을 구현하는 구현체들의 메서드들은 체크 예외를 던질 수 있다.
+
+ExecutorService
+- `void execute(Runnalbe command)` : Runnable 작업을 제출, 반환값 X
+- `<T> Future<T> submit(Callable<T> task)` : Callable 작업을 제출하고 결과를 반환
+- `Future<?> submit(Runnalbe task)` : Runnable 작업을 제출하고 결과를 반환
+  - null을 반환한다. 결과가 없지만 블로킹되는 부분도 같다.
+
+Future
+- Future는 작업의 미래 계산의 결과를 나타내며 계산이 완료되었는지 확인하고, 완료될 때까지 기다릴 수 있는 기능을 제공한다.
+- 주요 메서드
+  - boolean cancel(boolean mayInterruptIfRunning)
+    - 기능 : 아직 완료되지 않은 작업을 취소한다.
+    - 매개 변수 : boolean mayInterruptIfRunning
+      - cancel(true) : Future를 취소 상태로 변경 -> 작업이 실행중이라면 Thread.interrupt()를 호출해 작업을 중단
+      - cancel(false) : Future를 취소 상태로 변경 -> 이미 실행 중인 작업을 중단하지는 않는다.
+    - 반환값 : 작업이 성공적으로 취소된 경우 true, 이미 완료되엇거나 취소할 수 없는 경우 false
+    - 취소 상태의 Future에 Future.get()을 호출 하면 CancellationException 발생
+  - boolean isCancelled()
+    - 기능 : 작업이 취소되었는지 여부를 확인
+    - 반환값 : 작업이 취소된 경우 true, 그렇지 않은 경우 false
+  - boolean isDone()
+    - 기능 : 작업이 완료되었는지 여부를 확인한다
+    - 반환값 : 작업이 완료되었거나, 취소되었거나, 예외가 발생하여 종료된 경우 true, 작업 중이면 false
+  - State state()
+    - 기능 Future 상태를 반환 자바19부터 지원
+      - RUNNING : 작업 실행 중
+      - SUCCESS : 성공
+      - FAILED : 실패
+      - CANCELLED : 취소
+  - V get()
+    - 기능 : 작업이 완료될 때까지 대기하고, 완료되면 결과를 반환한다.
+    - 반환값 : 작업의 결과
+    - 예외
+      - InterruptedException : 대기 중에 현재 스레드가 인터럽트된 경우 발생
+      - ExecutionException : 작업 계산 중에 예외가 발생한 경우 발생
+  - V get(long timeout, TimeUnit unit)
+    - 기능 : get()과 같으나 시간 초과되면 에외을 발생
+    - 매개변수
+      - timeout : 대기할 최대 시간
+      - unit : timeout 매개변수의 시간 단위 지정
+    - 반환값 : 작업의 결과
+    - 예외
+      - InterruptedException : 대기 중에 현재 스레드가 인터럽트된 경우 발생
+      - ExecutionException : 작업 계산 중에 예외가 발생한 경우 발생
+      - TimeoutException : 주어진 시간 내에 작업이 완료되지 않은 경우 발생
+
+future.get()을 호출 했을 때
+- Future가 완료 상태 : Future가 완료 상태면 Future에 결과도 포함되어 있다. 이 경우 요청 스레드는 대기하지 않고 값을 즉시 반환받을 수 있다.
+- Future가 완료 상태가 아님 : 아직 수행되지 않았거나 수행 중인 상태, 요청 스레드가 결과를 받기 위해 대기해야 한다. 스레드가 어떤 결과를 얻기 위해 대기하는 것을 Blocking이라 한다.
+
+ExecutorService - 작업 컬렉션 처리
+- invokeAll()
+  - `<T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks) throws InterruptedException`
+    - 모든 Callable 작업을 제출하고, 모든 작업이 완료될 때까지 기다린다.
+  - `<T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit) throws InterruptedException`
+    - 지정된 시간 내에 모든 Callable 작업을 제출하고 완료될 때까지 기다린다.
+- invokeAny()
+  - `<T> T invokeAny(Collection<? extends Callable<T>> tasks) throws InterruptedException, ExecutionException`
+    - 하나의 Callable 작업을 완료될 때까지 기다리고, 가장 먼저 완료된 작업의 결과를 반환한다.
+    - 완료되지 않은 나머지 작업은 취소한다.
+  - `<T> T invokeAny(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException`
+    - 지정된 시간 내에 하나의 Callable 작업이 완료될 때까지 기다리고, 가장 먼저 완료된 작업의 결과를 반환한다.
+    - 완료되지 않은 나머지 작업은 취소한다.
