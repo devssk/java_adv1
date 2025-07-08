@@ -561,3 +561,95 @@ ExecutorService - 작업 컬렉션 처리
   - `<T> T invokeAny(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException`
     - 지정된 시간 내에 하나의 Callable 작업이 완료될 때까지 기다리고, 가장 먼저 완료된 작업의 결과를 반환한다.
     - 완료되지 않은 나머지 작업은 취소한다.
+
+
+ExecutorService의 종료 메서드
+- 서비스 종료
+  - void shutdown()
+    - 새로운 작업을 받지 않고, 이미 제출된 작업을 모두 완료한 후에 종료한다.
+    - 논 블로킹 메서드(이 메서드를 호출한 스레드는 대기 하지 않고 즉시 다음 코드를 호출한다.)
+  - List<Runnable> shutdown()
+    - 실행 중인 작업을 중단하고, 대기 중인 작업을 반환하며 즉시 종료한다.
+    - 실행 중인 작업을 중단 하기 위해 인터럽트를 발생 시킨다.
+    - 논 블로킹 메서드
+- 서비스 상태확인
+  - boolean isShutdown()
+    - 서비스가 종료되었는지 확인한다.
+  - boolean isTerminated()
+    - shutdown(), shutdownNow() 호출 후 모든 작업이 완료되었는지 확인한다.
+- 작업 완료 대기
+  - boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException
+    - 서비스 종료시 모든 작업이 완료될 때까지 대기한다. 이때 지정된 시간까지만 대기한다.
+    - 블로킹 메서드
+- close()
+  - 자바 19부터 지원하는 서비스 종료 메서드
+    - shutdown()을 호출하고, 하루를 기다려도 작업이 완료되지 않으면 shutdownNow()를 호출
+    - 호출한 스레드에 인터럽트가 발생해도 shutdownNow() 호출
+
+```java
+BlockingQueue<Runnable> workQueue = new ArrayBlockingQueue<>(2);
+ExecutorService es = new ThreadPoolExecutor(2,4,3000,TimeUnit.MILLISECONDS, workQueue);
+```
+- 작업을 보관할 블로킹 큐의 구현체로 ArrayBlockingQueue(2)를 사용, 최대 2개까지 작업을 큐에 보관 가능
+- corePoolSize = 2, maximumPoolSize = 4 -> 기본 스레드 2개, 최대 스레드 4개
+  - 스레드 풀에 기본 2개의 스레드를 운영한다.
+  - 요청이 너무 많거나 급한 경우 스레드 풀은 최대 4개까지 스레드를 증가 시켜서 사용할 수 있다.
+  - 기본 스레드 수를 초과해서 만들어진 스레드를 초과 스레드라고 한다.
+- 3000, TimeUnit.MILLISECONDS
+  - 초과 스레드가 생존할 수 있는 대기 시간
+  - 이 시간 동안 초과 스레드가 처리할 작업이 없다면 초과 스레드는 제거
+- 작업을 보관하는 큐가 가득 차면 이때 maximumPoolSize 까지 초과 스레드를 만들어서 작업을 수행한다.
+  - 작업을 처리하기 위해 스레드를 생성했기 때문에 작업을 큐에 넣을 필요 없이 만들어진 스레드가 바로 작업을 처리
+    - 큐가 이미 가득찼기 때문에 큐에 넣는 것도 불가능
+- 큐도 가득차고, 스레드 풀의 스레드도 max 사이즈 만큼 가득 찼다면 새로 요청이 오는 작업은 RejectedExecutionException이 발생하며 작업을 거절한다.
+- 작업을 모두 완료 하고 초과 스레드의 생존 대기 시간이 지나면 스레드 풀에서 제거 된다.
+  - 초과 스레드가 작업을 처리할 때마다 시간은 계속 초기화 된다.
+
+
+Executors 스레드 풀 전략
+- newSingleThreadPool() : 단일 스레드 풀 전략
+  - `new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>())`
+  - 스레드 풀에 기본 스레드 1개만 사용한다.
+  - 작업 큐 사이즈에 제한이 없다 (LinkedBlockingQueue)
+  - 주로 간단히 사용하거나, 테스트 용도로 사용
+- newFixedThreadPool(nThreads) : 고정 스레드 풀 전략
+  - `new ThreadPoolExecutor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>())`
+  - 스레드 풀에 nThreads 만큼의 기본 스레드를 생성한다. 초과 스레드는 생성하지 않는다.
+  - 작업 큐 사이즈에 제한이 없다.
+  - 스레드 수가 고정되어 있기 때문에 CPU, 메모리 리소스가 어느정도 예측 가능한 안정적인 방식이다.
+  - 사용자가 늘어나거나 갑작스런 요청 증가 때 요청을 처리하는 시간보다 쌓이는 시간이 더 빠른 경우 문제가 될 수 있다.
+- newCachedThreadPool() : 캐시 스레드 풀 전략
+  - `new ThreadPoolExecutor(0, Integer.MAX_VALUE, 60L, TimeUnit.SECONDS, new SynchronousQueue<Runnable>())`
+  - 기본 스레드를 사용하지 않고, 60초 생존 주기를 가진 초과 스레드만 사용한다.
+  - 초과 스레드의 수는 제한이 없다 (int형 max value -> 약 21억)
+  - 큐에 작업을 저장하지 않는다. (SynchronousQueue)
+    - 생산자의 요청을 스레드 풀의 소비자 스레드가 직접 받아서 바로 처리
+  - 모든 요청이 대기하지 않고 스레드가 바로바로 처리한다. -> 빠른 처리가 가능
+  - SynchronousQueue
+    - BlockingQueue 인터페이스 구현체 중 하나
+    - 내부에 저장 공간이 없다 -> 생산자의 작업을 소비자 스레드에게 직접 전달
+    - 생산자 스레드가 큐에 작업을 전달하면 소비자 스레드가 큐에서 작업을 꺼낼 때 까지 대기
+    - 소비자 작업을 요청하면 기다리던 생산자가 소비자에게 직접 작업을 전달하고 반환된다. 반대의 경우도 같다
+  - 사용자가 늘어나거나 갑작스런 요청 증가 때 스레드 사용량도 함께 늘어난다 -> CPU, 메모리 리소스 사용량 증가
+    - 적절한 시점에 시스템을 증설해야 한다. -> 시스템 다운 가능성
+- 고정 스레드 풀 전략은 서버 자원은 여유가 있는데 사용자만 느려지는 문제가 발생할 수 있다.
+- 캐시 스레드 풀 전략은 서버 자원을 최대한 사용하지만, 임계점을 넘는 순간 시스템이 다운될 수 있다.
+- 사용자 정의 풀 전략
+  - 일반 : 일반적인 상황에는 CPU, 메모리 자원을 예측할 수 있도록 고정 크기의 스레드로 서비스를 안정적으로 운영
+  - 긴급 : 사용자의 요청이 갑자기 증가하면 긴급하게 스레드를 추가로 투입해서 작업을 빠르게 처리
+  - 거절 : 사용자의 요청이 폭증해서 긴급 대응도 어렵다면 사용자의 요청을 거절
+  - ex) `new ThreadPoolExecutor(100, 200, 60L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>(1000))`
+
+ThreadPoolExecutor 예외 정책
+- AbortPolicy : 새로운 작업을 제출할 때 RejectedExecutionException 발생, 기본 정책
+- DiscardPolicy : 새로운 작업을 조용히 버린다.
+- CallerRunsPolicy : 새로운 작업을 제출한 스레드가 대신해서 직접 작업을 실행
+- 사용자 정의(RejectedExecutionHandler) : 개발자가 직업 정의한 거절 정책을 사용할 수 있다.
+- ThreadPoolExecutor를 shutdown() 하면 이후에 요청하는 작업을 거절하는데, 이때도 같은 정책 적용
+  - CallerRunsPolicy 정책은 shutdown() 이후에도 작업을 수행해버린다. 따라서 shutdown() 조건을 체크해서 이 경우에는 작업을 수행하지 않도록 한다.
+
+가장 좋은 최적화는 최적화하지 않는 것이다.
+- 극단적으로 최적화를 하지 말자는 말이 아니다.
+- 예측 불가능한 너무 먼 미래보다는 현재 상황에 맞는 최적화가 필요하다는 점
+- 모니터링을 잘 하고 있다가 최적화가 필요한 부분들이 발생하면 그때 필요한 부분들을 개선하는 것
+- 시스템의 자원을 적절하게 활용하되, 최작의 경우 적절한 거절을 통해 시스템이 다운되지 않도록 해야 함
